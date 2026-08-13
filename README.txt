@@ -1,24 +1,12 @@
-CLINICAL GOVERNANCE GAME ROOM — V1.1
+CLINICAL GOVERNANCE GAME ROOM — V1.2 CONNECTION HOTFIX
 
-What changed from v1:
-- Fixed the wheel geometry: it now uses a true circular conic-gradient wheel rather than distorted CSS triangles.
-- Added a broadcast "hello"/heartbeat fallback alongside Supabase Presence.
-- Participants should now appear in the facilitator's Connected list even if Presence sync is delayed.
-- Facilitator removes a participant after ~16 seconds without a heartbeat.
-- Added visible connection status to both facilitator and participant views.
-- Participant movement can be cleared by dropping the token back in the centre/outside the wheel.
+Changes:
+- Realtime room topic is forced to lower-case.
+- Broadcast config now matches the known-good diagnostics test (self: true).
+- Exact Supabase subscription error is displayed under the connection status.
+- Full subscription error is also written to the browser console.
+- Existing v1.1 wheel and session mechanics retained.
 
-DEPLOY
-Replace index.html, styles.css, app.js and config.js in your GitHub repo with these files, commit/push, and let Render redeploy.
+Deploy all four web files again through GitHub/Render.
 
-TEST
-1. Facilitator creates a room.
-2. Participant joins with the same 5-character room code.
-3. Within a few seconds, participant name should appear under Connected.
-4. Launch question.
-5. Participant drags ME token onto a segment.
-6. Facilitator sees anonymous dot and positioned count.
-7. Lock answers -> initials/name become available.
-8. Reveal -> correct segment is highlighted.
-
-No database table is created. Live state remains Realtime-only.
+If the facilitator still says "Connection problem", copy the small yellow error message displayed immediately underneath it. That is now the actual Supabase error rather than a generic status.

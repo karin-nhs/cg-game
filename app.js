@@ -19,7 +19,7 @@ const QUESTIONS=[
 ];
 
 let mode=null, room=null, channel=null, myId=crypto.randomUUID(), myName="", phase="waiting", qIndex=0;
-let answers={}, participants={}, timer=60, timerHandle=null, heartbeatHandle=null, connectionStatus="Connecting…";
+let answers={}, participants={}, timer=60, timerHandle=null, heartbeatHandle=null, connectionStatus="Connecting…", connectionDetail="";
 
 function esc(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]))}
 function initials(n){return n?n.trim().split(/\s+/).slice(0,2).map(x=>x[0]).join("").toUpperCase():"?"}
@@ -43,7 +43,8 @@ function pruneParticipants(){
  if(changed){renderSide();renderTokens()}
 }
 async function makeChannel(){
- channel=sb.channel("cg-room-"+room,{config:{presence:{key:myId},broadcast:{self:false}}});
+ const topic="cg-room-"+room.toLowerCase();
+ channel=sb.channel(topic,{config:{presence:{key:myId},broadcast:{self:true}}});
 
  channel
  .on("presence",{event:"sync"},()=>{
@@ -71,9 +72,13 @@ async function makeChannel(){
  .on("broadcast",{event:"state_request"},()=>{if(mode==="host")broadcastState()})
  .subscribe(async(status,err)=>{
    connectionStatus=status;
+   connectionDetail=err ? (err.message || String(err)) : "";
+   console.log("Realtime subscription:", {status, err, room, topic});
    if(status==="SUBSCRIBED"){
-     await channel.track({id:myId,name:myName||"Participant",role:mode,online_at:new Date().toISOString()});
      connectionStatus="Connected";
+     connectionDetail="";
+     const trackResult = await channel.track({id:myId,name:myName||"Participant",role:mode,online_at:new Date().toISOString()});
+     console.log("Presence track:", trackResult);
      if(mode==="participant"){
        sendHello();
        clearInterval(heartbeatHandle);
@@ -83,7 +88,7 @@ async function makeChannel(){
        clearInterval(heartbeatHandle);
        heartbeatHandle=setInterval(pruneParticipants,5000);
      }
-   } else if(status==="CHANNEL_ERROR"||status==="TIMED_OUT"){
+   } else if(status==="CHANNEL_ERROR"||status==="TIMED_OUT"||status==="CLOSED"){
      connectionStatus="Connection problem";
    }
    if(mode==="host")renderHost(); else if(mode==="participant")renderParticipant();
@@ -119,7 +124,7 @@ function wheelHTML(isParticipant=false){
  <div class="wheeldisc ${phase==="waiting"?"grey":""}"></div>${halo}${divs}<div class="labels">${labs}</div>
  <div class="ringcut"></div><div class="centertext">${phase==="waiting"?"Waiting for<br>next question":"CLINICAL<br>GOVERNANCE"}</div><div id="tokens"></div></div>`;
 }
-function connectionLine(){return `<div class="connection">${esc(connectionStatus)}</div>`}
+function connectionLine(){return `<div class="connection">${esc(connectionStatus)}</div>${connectionDetail?`<div class="debug">${esc(connectionDetail)}</div>`:""}`}
 
 function renderHost(){
  if(mode!=="host")return;
