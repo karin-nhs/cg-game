@@ -1,27 +1,24 @@
-CLINICAL GOVERNANCE GAME ROOM — V1.3
+CLINICAL GOVERNANCE GAME ROOM — V1.1
 
-This version changes the Realtime architecture deliberately.
+What changed from v1:
+- Fixed the wheel geometry: it now uses a true circular conic-gradient wheel rather than distorted CSS triangles.
+- Added a broadcast "hello"/heartbeat fallback alongside Supabase Presence.
+- Participants should now appear in the facilitator's Connected list even if Presence sync is delayed.
+- Facilitator removes a participant after ~16 seconds without a heartbeat.
+- Added visible connection status to both facilitator and participant views.
+- Participant movement can be cleared by dropping the token back in the centre/outside the wheel.
 
-WHY
-The standalone Supabase diagnostics page connects successfully, while the game-created channel was failing with a transport error.
-
-WHAT V1.3 DOES
-- Opens ONE global Supabase Broadcast channel immediately when the page loads.
-- Uses the exact known-good diagnostics channel name.
-- Does not use Presence at all.
-- Does not create a new Supabase channel when a facilitator creates a room.
-- Room codes are carried inside Broadcast payloads and messages are filtered client-side.
-- Facilitator/Participant buttons remain disabled until the known-good Realtime channel reports SUBSCRIBED.
-- Participant list is maintained by ephemeral hello/heartbeat Broadcast messages.
-- No database table is used.
+DEPLOY
+Replace index.html, styles.css, app.js and config.js in your GitHub repo with these files, commit/push, and let Render redeploy.
 
 TEST
-1. Deploy all files.
-2. Open the home page.
-3. Confirm the page changes from Connecting... to Connected BEFORE choosing Facilitator or Participant.
-4. Create a room in one browser.
-5. Join that room from another browser/device.
-6. Participant should appear in Connected within a few seconds.
-7. Launch a question and test token movement.
+1. Facilitator creates a room.
+2. Participant joins with the same 5-character room code.
+3. Within a few seconds, participant name should appear under Connected.
+4. Launch question.
+5. Participant drags ME token onto a segment.
+6. Facilitator sees anonymous dot and positioned count.
+7. Lock answers -> initials/name become available.
+8. Reveal -> correct segment is highlighted.
 
-This is intentionally a prototype transport architecture. It proves the game mechanics without storing session data.
+No database table is created. Live state remains Realtime-only.
