@@ -83,8 +83,8 @@ async function makeChannel(){
    if(status==="SUBSCRIBED"){
      connectionStatus="Connected";
      connectionDetail="";
-     const trackResult = await channel.track({id:myId,name:myName||"Participant",role:mode,online_at:new Date().toISOString()});
-     console.log("Presence track:", trackResult);
+    // const trackResult = await channel.track({id:myId,name:myName||"Participant",role:mode,online_at:new Date().toISOString()});
+    // console.log("Presence track:", trackResult);
      if(mode==="participant"){
        sendHello();
        clearInterval(heartbeatHandle);
