@@ -1,12 +1,6 @@
 
 const {supabaseUrl,supabaseKey}=window.CG_CONFIG;
-const sb = supabase.createClient(supabaseUrl, supabaseKey, {
-  realtime: {
-    params: {
-      eventsPerSecond: 10
-    }
-  }
-});
+const sb=supabase.createClient(supabaseUrl,supabaseKey);
 const app=document.getElementById("app");
 
 const ZONES=[
@@ -26,6 +20,7 @@ const QUESTIONS=[
 
 let mode=null, room=null, channel=null, myId=crypto.randomUUID(), myName="", phase="waiting", qIndex=0;
 let answers={}, participants={}, timer=60, timerHandle=null, heartbeatHandle=null, connectionStatus="Connecting…", connectionDetail="";
+let realtimeReady=false;
 
 function esc(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]))}
 function initials(n){return n?n.trim().split(/\s+/).slice(0,2).map(x=>x[0]).join("").toUpperCase():"?"}
@@ -34,7 +29,8 @@ function roomCode(){const chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";return Array.
 function home(){app.innerHTML=`<div class="shell"><div class="top"><div class="brand">Clinical Governance</div><div class="card home">
 <div class="small">LIVE LEARNING ACTIVITY</div><h1>Clinical Governance Game Room</h1>
 <p class="sub">Move around the Clinical Governance wheel, compare where the room stands, and discuss the reasoning together.</p>
-<div class="choices"><button class="bigbtn" onclick="hostSetup()">I'm facilitating</button><button class="bigbtn" onclick="joinSetup()">I'm participating</button></div></div></div></div>`}
+<div class="connection">${esc(connectionStatus)}</div>${connectionDetail?`<div class="debug">${esc(connectionDetail)}</div>`:""}
+<div class="choices"><button class="bigbtn" ${!realtimeReady?"disabled":""} onclick="hostSetup()">I'm facilitating</button><button class="bigbtn" ${!realtimeReady?"disabled":""} onclick="joinSetup()">I'm participating</button></div></div></div></div>`}
 window.hostSetup=()=>app.innerHTML=`<div class="shell"><div class="card home"><h1>Create a game room</h1><p class="sub">You'll control the questions, timer, locking and answer reveal.</p><button class="primary" onclick="createRoom()">Create room</button> <button class="secondary" onclick="home()">Back</button></div></div>`;
 window.joinSetup=()=>app.innerHTML=`<div class="shell"><div class="card home"><h1>Join a game room</h1><div class="form"><input id="rc" maxlength="5" placeholder="Room code" style="text-transform:uppercase"><input id="nm" maxlength="40" placeholder="Display name (optional)"><div class="small">Use your first name, initials or a nickname. It is only used during the live session.</div><button class="primary" onclick="joinRoom()">Join room</button></div><button class="secondary" onclick="home()">Back</button></div></div>`;
 
@@ -48,71 +44,106 @@ function pruneParticipants(){
  Object.keys(participants).forEach(id=>{if(now-(participants[id].lastSeen||0)>16000){delete participants[id];delete answers[id];changed=true}});
  if(changed){renderSide();renderTokens()}
 }
-async function makeChannel(){
- const topic = "cg-realtime-diagnostics";
- channel=sb.channel(topic,{config:{presence:{key:myId},broadcast:{self:true}}});
 
- channel
- .on("presence",{event:"sync"},()=>{
-   const st=channel.presenceState();
-   Object.values(st).flat().forEach(p=>{ if(p?.role==="participant") upsertParticipant(p); });
-   renderSide();
- })
- .on("broadcast",{event:"hello"},({payload})=>{
-   if(mode==="host"){upsertParticipant(payload);broadcastState();}
- })
- .on("broadcast",{event:"heartbeat"},({payload})=>{
-   if(mode==="host")upsertParticipant(payload);
- })
- .on("broadcast",{event:"state"},({payload})=>{
-   if(mode==="participant")applyState(payload);
- })
- .on("broadcast",{event:"position"},({payload})=>{
-   if(mode==="host"){
-     upsertParticipant({id:payload.id,name:payload.name,role:"participant"});
-     if(payload.zone===null) delete answers[payload.id];
-     else answers[payload.id]={zone:payload.zone,name:payload.name};
-     renderTokens();renderSide();
-   }
- })
- .on("broadcast",{event:"state_request"},()=>{if(mode==="host")broadcastState()})
- .subscribe(async(status,err)=>{
-   connectionStatus=status;
-   connectionDetail=err ? (err.message || String(err)) : "";
-   console.log("Realtime subscription:", {status, err, room, topic});
-   if(status==="SUBSCRIBED"){
-     connectionStatus="Connected";
-     connectionDetail="";
-    // const trackResult = await channel.track({id:myId,name:myName||"Participant",role:mode,online_at:new Date().toISOString()});
-    // console.log("Presence track:", trackResult);
-     if(mode==="participant"){
-       sendHello();
-       clearInterval(heartbeatHandle);
-       heartbeatHandle=setInterval(sendHello,5000);
-       channel.send({type:"broadcast",event:"state_request",payload:{id:myId}});
-     } else {
-       clearInterval(heartbeatHandle);
-       heartbeatHandle=setInterval(pruneParticipants,5000);
-     }
-   } else if(status==="CHANNEL_ERROR"||status==="TIMED_OUT"||status==="CLOSED"){
-     connectionStatus="Connection problem";
-   }
-   if(mode==="host")renderHost(); else if(mode==="participant")renderParticipant();
- });
+function messageForThisRoom(payload){
+  return payload && payload.room && room && payload.room===room;
 }
+
+async function connectRealtime(){
+  if(channel) return;
+  connectionStatus="Connecting…";
+  connectionDetail="";
+
+  // This deliberately mirrors the standalone diagnostics page that already worked.
+  channel=sb.channel("cg-realtime-diagnostics",{
+    config:{broadcast:{self:true}}
+  });
+
+  channel
+    .on("broadcast",{event:"hello"},({payload})=>{
+      if(!messageForThisRoom(payload)) return;
+      if(mode==="host"){
+        upsertParticipant({id:payload.id,name:payload.name,role:"participant"});
+        broadcastState();
+      }
+    })
+    .on("broadcast",{event:"heartbeat"},({payload})=>{
+      if(!messageForThisRoom(payload)) return;
+      if(mode==="host") upsertParticipant({id:payload.id,name:payload.name,role:"participant"});
+    })
+    .on("broadcast",{event:"state"},({payload})=>{
+      if(!messageForThisRoom(payload)) return;
+      if(mode==="participant") applyState(payload);
+    })
+    .on("broadcast",{event:"position"},({payload})=>{
+      if(!messageForThisRoom(payload)) return;
+      if(mode==="host"){
+        upsertParticipant({id:payload.id,name:payload.name,role:"participant"});
+        if(payload.zone===null) delete answers[payload.id];
+        else answers[payload.id]={zone:payload.zone,name:payload.name};
+        renderTokens(); renderSide();
+      }
+    })
+    .on("broadcast",{event:"state_request"},({payload})=>{
+      if(!messageForThisRoom(payload)) return;
+      if(mode==="host") broadcastState();
+    });
+
+  channel.subscribe((status,err)=>{
+    console.log("Realtime subscription:",{status,err});
+    if(status==="SUBSCRIBED"){
+      realtimeReady=true;
+      connectionStatus="Connected";
+      connectionDetail="";
+    } else if(status==="CHANNEL_ERROR"||status==="TIMED_OUT"||status==="CLOSED"){
+      realtimeReady=false;
+      connectionStatus="Connection problem";
+      connectionDetail=err ? (err.message || String(err)) : status;
+    } else {
+      connectionStatus=status;
+    }
+    refreshCurrentView();
+  });
+}
+
+function refreshCurrentView(){
+  if(mode==="host") renderHost();
+  else if(mode==="participant") renderParticipant();
+}
+
+function startParticipantHeartbeat(){
+  clearInterval(heartbeatHandle);
+  sendHello();
+  heartbeatHandle=setInterval(sendHello,5000);
+}
+
 function sendHello(){
- if(!channel)return;
- channel.send({type:"broadcast",event:"hello",payload:{id:myId,name:myName,role:"participant"}});
- channel.send({type:"broadcast",event:"heartbeat",payload:{id:myId,name:myName,role:"participant"}});
+  if(!channel || !realtimeReady || !room) return;
+  const payload={room,id:myId,name:myName,role:"participant"};
+  channel.send({type:"broadcast",event:"hello",payload});
+  channel.send({type:"broadcast",event:"heartbeat",payload});
 }
 
-window.createRoom=async()=>{mode="host";room=roomCode();myName="Facilitator";renderHost();await makeChannel()}
+window.createRoom=async()=>{
+  if(!realtimeReady) return alert("Realtime is not connected yet. Please wait a moment and try again.");
+  mode="host";
+  room=roomCode();
+  myName="Facilitator";
+  clearInterval(heartbeatHandle);
+  heartbeatHandle=setInterval(pruneParticipants,5000);
+  renderHost();
+};
+
 window.joinRoom=async()=>{
- room=document.getElementById("rc").value.trim().toUpperCase();
- if(room.length!==5)return alert("Enter the 5-character room code.");
- myName=document.getElementById("nm").value.trim()||("Guest "+myId.slice(0,4));
- mode="participant";renderParticipant();await makeChannel();
-}
+  if(!realtimeReady) return alert("Realtime is not connected yet. Please wait a moment and try again.");
+  room=document.getElementById("rc").value.trim().toUpperCase();
+  if(room.length!==5) return alert("Enter the 5-character room code.");
+  myName=document.getElementById("nm").value.trim()||("Guest "+myId.slice(0,4));
+  mode="participant";
+  renderParticipant();
+  startParticipantHeartbeat();
+  channel.send({type:"broadcast",event:"state_request",payload:{room,id:myId}});
+};
 
 function wheelHTML(isParticipant=false){
  let labs="",divs="";
@@ -130,7 +161,7 @@ function wheelHTML(isParticipant=false){
  <div class="wheeldisc ${phase==="waiting"?"grey":""}"></div>${halo}${divs}<div class="labels">${labs}</div>
  <div class="ringcut"></div><div class="centertext">${phase==="waiting"?"Waiting for<br>next question":"CLINICAL<br>GOVERNANCE"}</div><div id="tokens"></div></div>`;
 }
-function connectionLine(){return `<div class="connection">${esc(connectionStatus)}</div>${connectionDetail?`<div class="debug">${esc(connectionDetail)}</div>`:""}`}
+function connectionLine(){return `<div class="connection">${esc(connectionStatus)}</div>`}
 
 function renderHost(){
  if(mode!=="host")return;
@@ -185,15 +216,15 @@ function enableDrag(){
    const x=parseFloat(token.style.left),y=parseFloat(token.style.top),dx=x-50,dy=y-50,dist=Math.hypot(dx,dy);
    if(dist<18||dist>49){
      token.style.left="50%";token.style.top="50%";delete answers[myId];
-     channel.send({type:"broadcast",event:"position",payload:{id:myId,name:myName,zone:null}});return;
+     channel.send({type:"broadcast",event:"position",payload:{room,id:myId,name:myName,zone:null}});return;
    }
    const deg=(Math.atan2(dy,dx)*180/Math.PI+90+360)%360,zone=Math.floor(deg/45)%8;
    answers[myId]={zone,name:myName};const p=posFor(zone);token.style.left=p[0]+"%";token.style.top=p[1]+"%";
-   channel.send({type:"broadcast",event:"position",payload:{id:myId,name:myName,zone}});
+   channel.send({type:"broadcast",event:"position",payload:{room,id:myId,name:myName,zone}});
  };
  token.onpointerdown=e=>{if(phase!=="answering")return;active=true;document.addEventListener("pointermove",move);document.addEventListener("pointerup",end)};
 }
-function broadcastState(){if(channel)channel.send({type:"broadcast",event:"state",payload:{phase,qIndex,timer}})}
+function broadcastState(){if(channel&&realtimeReady&&room)channel.send({type:"broadcast",event:"state",payload:{room,phase,qIndex,timer}})}
 function applyState(s){
  const oldPhase=phase;phase=s.phase;qIndex=s.qIndex;timer=s.timer;
  if(phase==="waiting"&&oldPhase!=="waiting")answers={};
@@ -218,3 +249,4 @@ function renderExplanation(){
  e.innerHTML=phase==="revealed"?`<div class="explain"><strong>${QUESTIONS[qIndex][2]}</strong><br>${QUESTIONS[qIndex][3]}</div>`:"";
 }
 home();
+connectRealtime();
