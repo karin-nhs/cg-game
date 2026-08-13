@@ -1,6 +1,12 @@
 
 const {supabaseUrl,supabaseKey}=window.CG_CONFIG;
-const sb=supabase.createClient(supabaseUrl,supabaseKey);
+const sb = supabase.createClient(supabaseUrl, supabaseKey, {
+  realtime: {
+    params: {
+      eventsPerSecond: 10
+    }
+  }
+});
 const app=document.getElementById("app");
 
 const ZONES=[
