@@ -49,7 +49,7 @@ function pruneParticipants(){
  if(changed){renderSide();renderTokens()}
 }
 async function makeChannel(){
- const topic="cg-room-"+room.toLowerCase();
+ const topic = "cg-realtime-diagnostics";
  channel=sb.channel(topic,{config:{presence:{key:myId},broadcast:{self:true}}});
 
  channel
