@@ -1,34 +1,24 @@
-CLINICAL GOVERNANCE GAME ROOM — V1
+CLINICAL GOVERNANCE GAME ROOM — V1.1
 
-This is the first deployable multiplayer prototype.
+What changed from v1:
+- Fixed the wheel geometry: it now uses a true circular conic-gradient wheel rather than distorted CSS triangles.
+- Added a broadcast "hello"/heartbeat fallback alongside Supabase Presence.
+- Participants should now appear in the facilitator's Connected list even if Presence sync is delayed.
+- Facilitator removes a participant after ~16 seconds without a heartbeat.
+- Added visible connection status to both facilitator and participant views.
+- Participant movement can be cleared by dropping the token back in the centre/outside the wheel.
 
-FILES
-- index.html
-- styles.css
-- app.js
-- config.js
+DEPLOY
+Replace index.html, styles.css, app.js and config.js in your GitHub repo with these files, commit/push, and let Render redeploy.
 
-DEPLOY ON RENDER
-1. Replace the files in your existing GitHub/Render test repo with these four files.
-2. Commit and push.
-3. Let Render redeploy the Static Site.
-4. Open the Render URL in one browser and choose "I'm facilitating".
-5. Create a room.
-6. Open the same Render URL on another browser/device and choose "I'm participating".
-7. Enter the room code and a display name or nickname.
-8. Launch the question from the facilitator screen.
-9. Drag the participant token onto a wheel segment.
-10. The facilitator should see an anonymous dot. Lock answers to reveal initials, then reveal the answer.
+TEST
+1. Facilitator creates a room.
+2. Participant joins with the same 5-character room code.
+3. Within a few seconds, participant name should appear under Connected.
+4. Launch question.
+5. Participant drags ME token onto a segment.
+6. Facilitator sees anonymous dot and positioned count.
+7. Lock answers -> initials/name become available.
+8. Reveal -> correct segment is highlighted.
 
-PRIVACY / DATA
-This prototype does not create a Supabase database table.
-Live names, presence, game state and answers are transmitted through Supabase Realtime.
-They are intended as ephemeral session state, not a permanent learner record.
-
-IMPORTANT V1 LIMITATIONS
-- The facilitator browser is the authority for the room. If it closes, the room is effectively lost.
-- Room codes are convenience identifiers, not security credentials.
-- Public Realtime channels are being used for this prototype.
-- There is no facilitator authentication yet.
-- A participant joining late requests current state from the host.
-- This is a prototype, not yet an organisation-approved production service.
+No database table is created. Live state remains Realtime-only.
